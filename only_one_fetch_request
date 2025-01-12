@@ -1,0 +1,103 @@
+import wixAnimations from 'wix-animations';
+import { local } from 'wix-storage';
+
+function saveFavoriteCity(cityName) {
+    local.setItem('favoriteCity', cityName);
+    console.log(`Saved ${cityName} as my city`);
+}
+
+// Function to load the favorite city from local storage
+function loadFavoriteCity() {
+    const savedCity = local.getItem('favoriteCity');
+    if (savedCity) {
+        $w('#inputField').value = savedCity;
+        fetchWeatherData(savedCity); // Fetch weather data for the saved city
+    }
+}
+
+function fetchWeatherData(cityName) {
+    const selectedUnit = $w('#tempRadio').value;
+    let unit, unitSymbol;
+
+    if (selectedUnit === 'F') {
+        unit = 'imperial';
+        unitSymbol = '\u00B0F'; // Fahrenheit symbol
+    } else {
+        unit = 'metric';
+        unitSymbol = '\u00B0C'; // Celsius symbol
+    }
+
+    const apiKey = '7dc4703261b88dae5a9e117c8eed5831';
+    const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?q=${cityName}&units=${unit}&appid=${apiKey}`;
+
+    fetch(forecastUrl)
+        .then(response => response.json())
+        .then(forecastData => {
+            // Extract current weather data from the forecast
+            const currentWeatherData = forecastData.list[0];
+
+            // Update current temperature
+            $w('#displayCityName').text = forecastData.city.name;
+            $w('#temperature').text = `${Math.round(currentWeatherData.main.temp)}${unitSymbol}`;
+            $w('#spin').src = `http://openweathermap.org/img/w/${currentWeatherData.weather[0].icon}.png`;
+
+            // Animate spinning element
+            let spinningElement = $w('#spin');
+            let timeline = wixAnimations.timeline();
+            timeline.add(spinningElement, {
+                rotate: 360,
+                scale: 1,
+                duration: 1000,
+            });
+            timeline.play();
+
+            // Update 5-day forecast
+            const forecastItems = forecastData.list
+                .filter((item, index) => index % 8 === 0) // Filter 3-hour increments to daily data
+                .map((item, index) => ({
+                    _id: `day-${index}`,
+                    date: new Date(item.dt * 1000).toLocaleDateString(),
+                    temp: `${Math.round(item.main.temp)}${unitSymbol}`,
+                    icon: `http://openweathermap.org/img/w/${item.weather[0].icon}.png`,
+                }));
+
+            $w('#forecastRepeater').data = forecastItems;
+            $w('#forecastRepeater').onItemReady(($item, itemData) => {
+                $item('#forecastDate').text = itemData.date;
+                $item('#forecastTemp').text = itemData.temp;
+                $item('#forecastIcon').src = itemData.icon;
+            });
+        })
+        .catch(error => {
+            console.error('Error fetching weather data:', error);
+        });
+}
+
+$w.onReady(function () {
+    loadFavoriteCity();
+
+    $w('#checkbox1').onChange(() => {
+        const isCheckBoxSelected = $w('#checkbox1').checked;
+        const cityName = $w('#inputField').value;
+
+        if (isCheckBoxSelected && cityName) {
+            saveFavoriteCity(cityName);
+        } else if (!isCheckBoxSelected) {
+            local.removeItem('favoriteCity');
+        }
+    });
+
+    $w('#enterButton').onClick(() => {
+        const cityName = $w('#inputField').value;
+        if (cityName) {
+            fetchWeatherData(cityName);
+        }
+    });
+
+    $w('#tempRadio').onChange(() => {
+        const cityName = $w('#inputField').value;
+        if (cityName) {
+            fetchWeatherData(cityName);
+        }
+    });
+});
