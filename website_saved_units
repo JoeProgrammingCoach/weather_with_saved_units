@@ -1,0 +1,111 @@
+import wixAnimations from 'wix-animations';
+import { local } from 'wix-storage'; // Import wix-storage for saving user preferences
+
+function saveFavoriteCity(cityName, unit) {
+    const favoriteData = {
+        cityName: cityName,
+        unit: unit
+    };
+    local.setItem('favoriteCityData', JSON.stringify(favoriteData));
+    console.log(`Saved favorite: ${cityName} with unit: ${unit}`);
+}
+
+function loadFavoriteCity() {
+    const savedData = local.getItem('favoriteCityData');
+    if (savedData) {
+        const favoriteData = JSON.parse(savedData);
+        const { cityName, unit } = favoriteData;
+
+        console.log(`Loaded favorite city: ${cityName} with unit: ${unit}`);
+        $w('#inputField').value = cityName;
+
+        // Set the temperature unit radio button based on the saved unit
+        $w('#tempRadio').value = unit;
+
+        // Fetch weather data for the saved city and unit
+        fetchWeatherData(cityName);
+    }
+}
+
+function fetchWeatherData(cityName) {
+    const selectedUnit = $w('#tempRadio').value;
+
+    // Determine the unit and symbol
+    let unit;
+    let unitSymbol;
+    if (selectedUnit == 'F') {
+        unit = 'Imperial';
+        unitSymbol = '°F';
+    } else {
+        unit = 'Metric';
+        unitSymbol = '°C';
+    }
+
+    const apiKey = '7dc4703261b08dae5a9e117c8eed5831';
+    const currentTempUrl = `https://api.openweathermap.org/data/2.5/weather?q=${cityName}&units=${unit}&appid=${apiKey}`;
+    const fiveDayForecastUrl = `https://api.openweathermap.org/data/2.5/forecast?q=${cityName}&units=${unit}&appid=${apiKey}`;
+
+    const timeline = wixAnimations.timeline();
+    timeline.add($w('#spin'), { rotate: 360, scale: 1, duration: 1000 }).play();
+
+    Promise.all([
+        fetch(currentTempUrl).then(response => response.json()),
+        fetch(fiveDayForecastUrl).then(response => response.json()),
+    ])
+    .then(([currentWeatherData, forecastData]) => {
+        // Update current weather
+        $w('#displayCityName').text = currentWeatherData.name;
+        $w('#temperature').text = `${Math.round(currentWeatherData.main.temp)}${unitSymbol}`;
+        $w('#spin').src = `http://openweathermap.org/img/w/${currentWeatherData.weather[0].icon}.png`;
+
+        // Update 5-day forecast
+        const forecastItems = forecastData.list
+            .filter((_, index) => index % 8 === 0) // Filter daily forecasts
+            .map((item, index) => ({
+                _id: `day-${index}`,
+                date: new Date(item.dt * 1000).toLocaleDateString(),
+                temp: `${Math.round(item.main.temp)}${unitSymbol}`,
+                icon: `http://openweathermap.org/img/w/${item.weather[0].icon}.png`,
+                description: item.weather[0].description,
+            }));
+
+        $w('#forecastRepeater').data = forecastItems;
+        $w('#forecastRepeater').onItemReady(($item, itemData) => {
+            $item('#forecastDate').text = itemData.date;
+            $item('#forecastTemp').text = itemData.temp;
+            $item('#forecastIcon').src = itemData.icon;
+        });
+    })
+    .catch(error => console.error("Error fetching weather data:", error));
+}
+
+$w.onReady(function () {
+    loadFavoriteCity(); // Load the favorite city on page load
+
+    $w('#checkbox1').onChange(() => {
+        const isCheckboxSelected = $w('#checkbox1').checked;
+        const cityName = $w('#inputField').value;
+        const unit = $w('#tempRadio').value; // Get the selected unit
+
+        if (isCheckboxSelected && cityName) {
+            saveFavoriteCity(cityName, unit);
+        } else if (!isCheckboxSelected) {
+            local.removeItem('favoriteCityData'); // Remove favorite city data from local storage
+            console.log("Favorite city and unit preference removed");
+        }
+    });
+
+    $w('#enterButton').onClick(() => {
+        const cityName = $w('#inputField').value;
+        if (cityName) {
+            fetchWeatherData(cityName);
+        }
+    });
+
+    $w('#tempRadio').onChange(() => {
+        const cityName = $w('#inputField').value;
+        if (cityName) {
+            fetchWeatherData(cityName);
+        }
+    });
+});
